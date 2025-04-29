@@ -168,13 +168,26 @@ class HivemindGRPOTrainer:
                 "train_dataset": train_dataset,
                 "eval_dataset": test_dataset,
             }
-            trainer = HivemindGRPOTrainer.PublishingGRPOTrainer(
-                self.node, self.dht, self.tokenizer, self.logger, **kwargs
-            )
-            self.train_and_save(trainer, train_dataset)
-            self.logger.info(
-                f"📉 Finished training round: {round_num} stage: {stage_num}"
-            )
+            # Offload inference to OpenAI if using wrapper
+            if hasattr(self.model, "__class__") and self.model.__class__.__name__ == "OpenAIModelWrapper":
+                # Example: use OpenAI for prompt generation (adjust as needed)
+                prompt = train_dataset[0]["prompt"] if hasattr(train_dataset[0], "__getitem__") else str(train_dataset[0])
+                try:
+                    output = self.model(prompt)
+                except Exception as e:
+                    self.logger.error(f"OpenAI API error: {e}")
+                    output = None
+                # Use output as needed in RL loop
+                # ...existing code...
+            else:
+                # ...original local inference code...
+                trainer = HivemindGRPOTrainer.PublishingGRPOTrainer(
+                    self.node, self.dht, self.tokenizer, self.logger, **kwargs
+                )
+                self.train_and_save(trainer, train_dataset)
+                self.logger.info(
+                    f"📉 Finished training round: {round_num} stage: {stage_num}"
+                )
 
         # Push to HF hub if desired
         # TODO: Come back and add additional logic checking if they've provided access token+HF username
