@@ -13,6 +13,7 @@ from hivemind_exp.gsm8k.stage_utils import gsm8k_stage_data
 from hivemind_exp.hivemind_utils import HivemindNode
 from hivemind_exp.name_utils import get_name_from_peer_id
 from hivemind_exp.trainer.hivemind_grpo_trainer import HivemindGRPOTrainer
+import openai
 
 logger = logging.getLogger(__name__)
 
@@ -36,14 +37,33 @@ class GRPOArguments:
     hf_token: str | None = None
 
 
+class OpenAIModelWrapper:
+    def __init__(self, api_key, model_name="gpt-3.5-turbo"):
+        self.api_key = api_key
+        self.model_name = model_name
+        openai.api_key = api_key
+
+    def __call__(self, prompt, **kwargs):
+        response = openai.ChatCompletion.create(
+            model=self.model_name,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=kwargs.get("max_tokens", 256),
+        )
+        return response["choices"][0]["message"]["content"]
+
+
 class GRPORunner:
     def get_model(self, args: GRPOConfig, model_name: str):
-        model_init_kwargs = args.model_init_kwargs or {}
-        # Disable caching if gradient checkpointing is enabled (not supported)
-        model_init_kwargs["use_cache"] = (
-            False if args.gradient_checkpointing else model_init_kwargs.get("use_cache")
-        )
-        return AutoModelForCausalLM.from_pretrained(model_name, **model_init_kwargs)
+        # Offload to OpenAI API if requested
+        if getattr(args, "use_openai_api", False):
+            return OpenAIModelWrapper(api_key=getattr(args, "openai_api_key", None), model_name=getattr(args, "openai_model_name", "gpt-3.5-turbo"))
+        # Original local model loading (commented out for offload)
+        # model_init_kwargs = args.model_init_kwargs or {}
+        # model_init_kwargs["use_cache"] = (
+        #     False if args.gradient_checkpointing else model_init_kwargs.get("use_cache")
+        # )
+        # return AutoModelForCausalLM.from_pretrained(model_name, **model_init_kwargs)
+        return AutoModelForCausalLM.from_pretrained(model_name)
 
     def get_tokenizer_name(self, model_args: ModelConfig, script_args: GRPOArguments):
         if script_args.tokenizer_name_or_path:
